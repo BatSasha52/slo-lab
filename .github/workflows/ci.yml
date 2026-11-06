@@ -99,20 +99,33 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      # The runner image ships its own root-owned kind and kubectl in
+      # /usr/local/bin, so the pinned versions go into a directory this job
+      # owns, placed first on PATH for the following steps.
       - name: Install kind, kubectl and helm
         run: |
-          curl -sSfLo /usr/local/bin/kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
-          curl -sSfLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-          chmod +x /usr/local/bin/kind /usr/local/bin/kubectl
+          bin="$RUNNER_TEMP/bin"
+          mkdir -p "$bin"
+          curl -sSfLo "$bin/kind" "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          curl -sSfLo "$bin/kubectl" "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x "$bin/kind" "$bin/kubectl"
           curl -sSfL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" \
-            | tar -xz --strip-components=1 -C /usr/local/bin linux-amd64/helm
+            | tar -xz --strip-components=1 -C "$bin" linux-amd64/helm
+          echo "$bin" >> "$GITHUB_PATH"
+      - name: Show tool versions
+        run: |
+          kind version
+          kubectl version --client
+          helm version --short
       - name: Bring up the lab and run the smoke test
         run: bash scripts/up.sh
       - name: Dump cluster state on failure
         if: failure()
+        # Tolerates a failure before the cluster existed, so the real error
+        # stays the one reported.
         run: |
-          kubectl get pods -A -o wide
-          kubectl get events -A --sort-by=.lastTimestamp | tail -50
+          kubectl get pods -A -o wide || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -50 || true
       - name: Delete cluster
         if: always()
         run: bash scripts/down.sh
