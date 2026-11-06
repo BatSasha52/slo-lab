@@ -1,0 +1,86 @@
+# Values for prometheus-community/kube-prometheus-stack, chart version pinned
+# in scripts/lib.sh. Only overrides are listed; everything else is the chart
+# default. Container image versions follow from the pinned chart version.
+
+fullnameOverride: kps
+
+defaultRules:
+  create: true
+  rules:
+    # Replaced by rules/meta-alerts.yaml so that every alert in this lab has
+    # a runbook in docs/runbooks/.
+    general: false
+    prometheus: false
+    alertmanager: false
+    # No Windows nodes here.
+    windows: false
+
+# The kind config binds these components' metrics to 0.0.0.0, so the chart's
+# default scrape targets work.
+kubeControllerManager:
+  enabled: true
+kubeScheduler:
+  enabled: true
+kubeEtcd:
+  enabled: true
+kubeProxy:
+  enabled: true
+
+prometheus:
+  prometheusSpec:
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    # Select ServiceMonitors and PrometheusRules from every namespace, not
+    # only those carrying this Helm release's label.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    # Long enough for the 28-day SLO window if the lab is left running; the
+    # size cap keeps it from filling the Docker Desktop disk first.
+    retention: 30d
+    retentionSize: 4GB
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+      limits:
+        memory: 3Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: standard
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+
+alertmanager:
+  alertmanagerSpec:
+    # The routing config lives in monitoring/alertmanager.yaml so it can be
+    # checked with amtool; scripts/deploy-monitoring.sh turns it into this Secret.
+    useExistingSecret: true
+    configSecret: alertmanager-slo-lab
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+
+grafana:
+  # No adminPassword: the Grafana chart then generates one and stores it in
+  # the kps-grafana Secret. scripts/port-forward.sh prints it.
+  defaultDashboardsTimezone: utc
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: monitoring
+
+prometheus-node-exporter:
+  # Docker Desktop's VM does not mount / with shared propagation, which makes
+  # node-exporter fail to start when it tries to mount the host root.
+  hostRootFsMount:
+    enabled: false

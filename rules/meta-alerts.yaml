@@ -1,0 +1,74 @@
+# Alerts about the monitoring system itself. SLO alerts can only fire if
+# scraping, rule evaluation and notification delivery all work, so each of
+# those gets its own alert, plus a Watchdog that should always be firing.
+groups:
+  - name: meta-alerts
+    rules:
+      # Always firing. An external dead-man's switch is supposed to expect a
+      # notification every few minutes and page when they stop. Here the
+      # receiver only logs them; see docs/runbooks/watchdog.md.
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: Alerting pipeline heartbeat, always firing.
+          description: >-
+            If this alert stops arriving, Prometheus, Alertmanager or the path
+            between them is broken and no other alert can be trusted.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/watchdog.md
+
+      - alert: PrometheusTargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scrape target {{ $labels.job }} {{ $labels.instance }} is down"
+          description: >-
+            Prometheus has failed to scrape {{ $labels.instance }} (job
+            {{ $labels.job }}, namespace {{ $labels.namespace }}) for 5 minutes.
+            Metrics from it are missing, so alerts based on them cannot fire.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/prometheus-target-down.md
+
+      # The SLIs are computed from server-side metrics. If no demo-app pod can
+      # be scraped, the ratios have no data and none of the burn-rate alerts
+      # can fire, even though users are getting errors. This covers that gap.
+      - alert: SLOMetricsAbsent
+        expr: absent(up{job="demo-app",namespace="slo-lab"} == 1)
+        for: 5m
+        labels:
+          severity: critical
+          service: demo-app
+        annotations:
+          summary: No demo-app instance is being scraped successfully
+          description: >-
+            For 5 minutes Prometheus has had no healthy demo-app target. The SLO
+            burn-rate alerts are blind until this is fixed.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/slo-metrics-absent.md
+
+      - alert: PrometheusRuleEvaluationFailures
+        expr: sum by (job, namespace, rule_group) (increase(prometheus_rule_evaluation_failures_total[5m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Rule group {{ $labels.rule_group }} is failing to evaluate"
+          description: >-
+            Prometheus reported rule evaluation failures in the last 5 minutes.
+            Alerts and recordings in that group may be missing or stale.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/prometheus-rule-evaluation-failures.md
+
+      # Delivered through the same Alertmanager whose notifications are
+      # failing, so this only helps when some integrations still work. The
+      # Watchdog going quiet is the backstop when none do.
+      - alert: AlertmanagerNotificationsFailing
+        expr: sum by (job, namespace, integration) (rate(alertmanager_notifications_failed_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alertmanager is failing to send {{ $labels.integration }} notifications"
+          description: >-
+            Notifications through the {{ $labels.integration }} integration have
+            been failing for 5 minutes. Pages and tickets may not be delivered.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/alertmanager-notifications-failing.md

@@ -1,0 +1,40 @@
+# Three nodes so the two app replicas can land on different workers and the
+# PodDisruptionBudget has something meaningful to protect during node drains.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: slo-lab
+kubeadmConfigPatches:
+  # Docker Desktop's WSL2 VM can still run cgroup v1, which kubelet 1.35+
+  # rejects by default. This opts back in; it is harmless on cgroup v2 hosts.
+  # See "Troubleshooting" in the README for switching WSL to cgroup v2.
+  - |
+    kind: KubeletConfiguration
+    failCgroupV1: false
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+    # kubeadm binds these components' metrics endpoints to localhost by
+    # default, which leaves their Prometheus targets permanently down.
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        controllerManager:
+          extraArgs:
+            - name: bind-address
+              value: "0.0.0.0"
+        scheduler:
+          extraArgs:
+            - name: bind-address
+              value: "0.0.0.0"
+        etcd:
+          local:
+            extraArgs:
+              - name: listen-metrics-urls
+                value: http://0.0.0.0:2381
+      - |
+        kind: KubeProxyConfiguration
+        metricsBindAddress: 0.0.0.0:10249
+  - role: worker
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed
+  - role: worker
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed

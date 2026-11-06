@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: demo-app
+  namespace: slo-lab
+  labels:
+    app.kubernetes.io/name: demo-app
+spec:
+  # The job label on scraped series comes from the Service name (demo-app);
+  # the SLI recording rules select on it.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: demo-app
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

@@ -1,0 +1,131 @@
+# S3-compatible object storage for Thanos blocks. SeaweedFS stands in for
+# MinIO, whose container images are no longer published. Thanos only needs
+# the S3 API, so the choice of server does not affect the rest of the setup.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: seaweedfs-data
+  labels:
+    app.kubernetes.io/name: seaweedfs
+    app.kubernetes.io/part-of: slo-lab
+spec:
+  storageClassName: standard
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seaweedfs
+  labels:
+    app.kubernetes.io/name: seaweedfs
+    app.kubernetes.io/part-of: slo-lab
+spec:
+  replicas: 1
+  strategy:
+    # The volume is ReadWriteOnce: the old pod has to release it first.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: seaweedfs
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: seaweedfs
+        app.kubernetes.io/part-of: slo-lab
+    spec:
+      containers:
+        - name: seaweedfs
+          image: chrislusf/seaweedfs:4.52
+          args:
+            - server
+            - -dir=/data
+            - -s3
+            - -s3.port=8333
+            - -s3.config=/etc/seaweedfs/s3.json
+            - -master.volumeSizeLimitMB=256
+          ports:
+            - name: s3
+              containerPort: 8333
+            - name: master
+              containerPort: 9333
+            - name: filer
+              containerPort: 8888
+          readinessProbe:
+            tcpSocket:
+              port: s3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: s3-config
+              mountPath: /etc/seaweedfs
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: seaweedfs-data
+        - name: s3-config
+          secret:
+            secretName: seaweedfs-s3-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seaweedfs
+  labels:
+    app.kubernetes.io/name: seaweedfs
+spec:
+  selector:
+    app.kubernetes.io/name: seaweedfs
+  ports:
+    - name: s3
+      port: 8333
+      targetPort: s3
+    - name: master
+      port: 9333
+      targetPort: master
+    - name: filer
+      port: 8888
+      targetPort: filer
+    # gRPC ports (HTTP port + 10000), used by `weed shell` in the bucket Job.
+    - name: master-grpc
+      port: 19333
+      targetPort: 19333
+    - name: filer-grpc
+      port: 18888
+      targetPort: 18888
+---
+# Thanos does not create buckets, so this creates one once the server answers.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seaweedfs-create-bucket
+  labels:
+    app.kubernetes.io/name: seaweedfs
+    app.kubernetes.io/part-of: slo-lab
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: create-bucket
+          image: chrislusf/seaweedfs:4.52
+          command:
+            - sh
+            - -c
+            - |
+              run() { echo "$1" | weed shell -master=seaweedfs:9333 -filer=seaweedfs:8888; }
+              run "s3.bucket.list" | grep -q thanos || run "s3.bucket.create -name thanos"
+              run "s3.bucket.list" | grep -q thanos

@@ -1,0 +1,100 @@
+# A second SLO, for the monitoring platform rather than for demo-app.
+#
+# demo-app is request-driven, so its SLIs are about requests (errors and
+# latency). The platform's product is data: teams rely on their metrics
+# being collected. Its SLI is therefore about completeness: the share of
+# scrape attempts that succeeded, across every target Prometheus scrapes.
+#
+#   SLI:       successful scrapes / attempted scrapes (all targets)
+#   Objective: 99.9% over 28 days
+#
+# up is 1 for a successful scrape and 0 for a failed one, with one sample per
+# attempt, so sum_over_time/count_over_time is exactly that ratio.
+#
+# The output uses the same slo:sli_error:ratio_rate<window> name as the
+# demo-app SLOs, so slo:error_budget_remaining:ratio in slo-recording.yaml
+# covers this SLO too.
+groups:
+  - name: platform-slo-sli
+    interval: 1m
+    rules:
+      - record: slo:sli_error:ratio_rate2h
+        expr: 1 - (sum(sum_over_time(up[2h])) / sum(count_over_time(up[2h])))
+        labels:
+          service: monitoring
+          slo: scrape-success
+      - record: slo:sli_error:ratio_rate6h
+        expr: 1 - (sum(sum_over_time(up[6h])) / sum(count_over_time(up[6h])))
+        labels:
+          service: monitoring
+          slo: scrape-success
+      - record: slo:sli_error:ratio_rate1d
+        expr: 1 - (sum(sum_over_time(up[1d])) / sum(count_over_time(up[1d])))
+        labels:
+          service: monitoring
+          slo: scrape-success
+      - record: slo:sli_error:ratio_rate3d
+        expr: 1 - (sum(sum_over_time(up[3d])) / sum(count_over_time(up[3d])))
+        labels:
+          service: monitoring
+          slo: scrape-success
+      - record: slo:objective:ratio
+        expr: vector(0.999)
+        labels:
+          service: monitoring
+          slo: scrape-success
+      - record: slo:error_budget:ratio
+        expr: vector(0.001)
+        labels:
+          service: monitoring
+          slo: scrape-success
+
+  - name: platform-slo-sli-28d
+    interval: 2m
+    rules:
+      - record: slo:sli_error:ratio_rate28d
+        expr: 1 - (sum(sum_over_time(up[28d])) / sum(count_over_time(up[28d])))
+        labels:
+          service: monitoring
+          slo: scrape-success
+
+  # Tickets only. Losing a few scrapes does not hurt anyone right away: the
+  # data gap shows up in dashboards and slow-window alerts, not in user
+  # traffic. Losing everything is already covered by PrometheusTargetDown,
+  # SLOMetricsAbsent and the Watchdog.
+  - name: platform-slo-alerts
+    rules:
+      - alert: ScrapeSuccessBudgetBurnTicket
+        expr: |
+          slo:sli_error:ratio_rate1d{service="monitoring",slo="scrape-success"} > (3 * 0.001)
+          and
+          slo:sli_error:ratio_rate2h{service="monitoring",slo="scrape-success"} > (3 * 0.001)
+        for: 15m
+        labels:
+          severity: warning
+          long_window: 1d
+          short_window: 2h
+        annotations:
+          summary: "Scrape success error budget burning at over 3x (1d/2h windows)"
+          description: >-
+            More than 0.3% of scrape attempts failed over the last day and the
+            last 2 hours (objective: 99.9% succeed). At this rate the 28-day
+            budget lasts less than 9.3 days.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/scrape-success-budget-burn-ticket.md
+      - alert: ScrapeSuccessBudgetBurnTicket
+        expr: |
+          slo:sli_error:ratio_rate3d{service="monitoring",slo="scrape-success"} > (1 * 0.001)
+          and
+          slo:sli_error:ratio_rate6h{service="monitoring",slo="scrape-success"} > (1 * 0.001)
+        for: 15m
+        labels:
+          severity: warning
+          long_window: 3d
+          short_window: 6h
+        annotations:
+          summary: "Scrape success error budget burning at over 1x (3d/6h windows)"
+          description: >-
+            More than 0.1% of scrape attempts failed over the last 3 days and
+            the last 6 hours (objective: 99.9% succeed). At this rate the
+            28-day budget runs out before the window ends.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/scrape-success-budget-burn-ticket.md

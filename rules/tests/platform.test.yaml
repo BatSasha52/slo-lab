@@ -1,0 +1,88 @@
+# Unit tests for rules/platform-slo.yaml and rules/capacity-recording.yaml.
+#   promtool test rules rules/tests/*.test.yaml
+
+rule_files:
+  - ../platform-slo.yaml
+  - ../capacity-recording.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # Four targets, one of which fails every other scrape: 1/8 = 12.5% of
+  # scrape attempts fail, far above the 0.1% budget.
+  - name: scrape success - flapping target opens a ticket
+    interval: 1m
+    input_series:
+      - series: 'up{job="a",instance="a:1"}'
+        values: '1x200'
+      - series: 'up{job="b",instance="b:1"}'
+        values: '1x200'
+      - series: 'up{job="c",instance="c:1"}'
+        values: '1x200'
+      - series: 'up{job="d",instance="d:1"}'
+        values: '1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0'
+    promql_expr_test:
+      - expr: round(slo:sli_error:ratio_rate2h * 1000) / 1000
+        eval_time: 89m
+        exp_samples:
+          - labels: '{service="monitoring",slo="scrape-success"}'
+            value: 0.125
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: ScrapeSuccessBudgetBurnTicket
+        exp_alerts:
+          - exp_labels: {severity: warning, service: monitoring, slo: scrape-success, long_window: 1d, short_window: 2h}
+            exp_annotations:
+              summary: "Scrape success error budget burning at over 3x (1d/2h windows)"
+              description: "More than 0.3% of scrape attempts failed over the last day and the last 2 hours (objective: 99.9% succeed). At this rate the 28-day budget lasts less than 9.3 days."
+              runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/scrape-success-budget-burn-ticket.md
+          - exp_labels: {severity: warning, service: monitoring, slo: scrape-success, long_window: 3d, short_window: 6h}
+            exp_annotations:
+              summary: "Scrape success error budget burning at over 1x (3d/6h windows)"
+              description: "More than 0.1% of scrape attempts failed over the last 3 days and the last 6 hours (objective: 99.9% succeed). At this rate the 28-day budget runs out before the window ends."
+              runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/scrape-success-budget-burn-ticket.md
+
+  - name: scrape success - all targets healthy
+    interval: 1m
+    input_series:
+      - series: 'up{job="a",instance="a:1"}'
+        values: '1x200'
+      - series: 'up{job="b",instance="b:1"}'
+        values: '1x200'
+    promql_expr_test:
+      - expr: slo:sli_error:ratio_rate2h
+        eval_time: 60m
+        exp_samples:
+          - labels: 'slo:sli_error:ratio_rate2h{service="monitoring",slo="scrape-success"}'
+            value: 0
+    alert_rule_test:
+      - eval_time: 3h
+        alertname: ScrapeSuccessBudgetBurnTicket
+        exp_alerts: []
+
+  - name: capacity - usage versus requests per namespace
+    interval: 1m
+    input_series:
+      # Two containers using 0.05 and 0.15 cores against 0.1 core requested each.
+      - series: 'container_cpu_usage_seconds_total{namespace="slo-lab",pod="p1",container="app"}'
+        values: '0+3x20'
+      - series: 'container_cpu_usage_seconds_total{namespace="slo-lab",pod="p2",container="app"}'
+        values: '0+9x20'
+      # The pod-level cgroup series must be ignored.
+      - series: 'container_cpu_usage_seconds_total{namespace="slo-lab",pod="p1",container=""}'
+        values: '0+3x20'
+      - series: 'kube_pod_container_resource_requests{namespace="slo-lab",pod="p1",container="app",resource="cpu"}'
+        values: '0.1x20'
+      - series: 'kube_pod_container_resource_requests{namespace="slo-lab",pod="p2",container="app",resource="cpu"}'
+        values: '0.1x20'
+    promql_expr_test:
+      - expr: round(namespace:cpu_requests_utilisation:ratio * 1000) / 1000
+        eval_time: 10m
+        exp_samples:
+          - labels: '{namespace="slo-lab"}'
+            value: 1
+      - expr: round(namespace:cpu_usage_cores:sum_rate5m * 1000) / 1000
+        eval_time: 10m
+        exp_samples:
+          - labels: '{namespace="slo-lab"}'
+            value: 0.2

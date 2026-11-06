@@ -1,0 +1,215 @@
+# SLI recording rules for the demo-app SLOs. See docs/slo.md for the
+# definitions and the reasoning behind the windows.
+#
+# slo:sli_error:ratio_rate<window> is the fraction of /work requests that were
+# "bad" over that window: 5xx responses for the availability SLO, responses
+# slower than 300 ms for the latency SLO. Both SLOs share one metric name and
+# are told apart by the slo label, so alerts and dashboards can treat them
+# the same way.
+#
+# "or vector(0)" keeps the availability ratio at 0 instead of empty while no
+# 5xx series exists yet (the counter for code="500" only appears after the
+# first error).
+#
+# Groups are split by evaluation cost: long windows read many more samples
+# and change slowly, so they are evaluated less often. No interval may reach
+# 5m, Prometheus' default lookback: an instant query would then sometimes
+# find no sample recent enough and return nothing.
+groups:
+  - name: slo-sli-short-windows
+    interval: 15s
+    rules:
+      - record: slo:sli_error:ratio_rate5m
+        expr: |
+          (sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work",code=~"5.."}[5m])) or vector(0))
+          /
+          sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work"}[5m]))
+        labels:
+          service: demo-app
+          slo: availability
+      - record: slo:sli_error:ratio_rate5m
+        expr: |
+          (
+            sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[5m]))
+            -
+            sum(rate(http_request_duration_seconds_bucket{job="demo-app",namespace="slo-lab",route="/work",le="0.3"}[5m]))
+          )
+          /
+          sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[5m]))
+        labels:
+          service: demo-app
+          slo: latency
+      - record: slo:sli_error:ratio_rate30m
+        expr: |
+          (sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work",code=~"5.."}[30m])) or vector(0))
+          /
+          sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work"}[30m]))
+        labels:
+          service: demo-app
+          slo: availability
+      - record: slo:sli_error:ratio_rate30m
+        expr: |
+          (
+            sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[30m]))
+            -
+            sum(rate(http_request_duration_seconds_bucket{job="demo-app",namespace="slo-lab",route="/work",le="0.3"}[30m]))
+          )
+          /
+          sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[30m]))
+        labels:
+          service: demo-app
+          slo: latency
+      - record: slo:sli_error:ratio_rate1h
+        expr: |
+          (sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work",code=~"5.."}[1h])) or vector(0))
+          /
+          sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work"}[1h]))
+        labels:
+          service: demo-app
+          slo: availability
+      - record: slo:sli_error:ratio_rate1h
+        expr: |
+          (
+            sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[1h]))
+            -
+            sum(rate(http_request_duration_seconds_bucket{job="demo-app",namespace="slo-lab",route="/work",le="0.3"}[1h]))
+          )
+          /
+          sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[1h]))
+        labels:
+          service: demo-app
+          slo: latency
+      - record: slo:sli_error:ratio_rate2h
+        expr: |
+          (sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work",code=~"5.."}[2h])) or vector(0))
+          /
+          sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work"}[2h]))
+        labels:
+          service: demo-app
+          slo: availability
+      - record: slo:sli_error:ratio_rate2h
+        expr: |
+          (
+            sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[2h]))
+            -
+            sum(rate(http_request_duration_seconds_bucket{job="demo-app",namespace="slo-lab",route="/work",le="0.3"}[2h]))
+          )
+          /
+          sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[2h]))
+        labels:
+          service: demo-app
+          slo: latency
+  - name: slo-sli-long-windows
+    interval: 1m
+    rules:
+      - record: slo:sli_error:ratio_rate6h
+        expr: |
+          (sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work",code=~"5.."}[6h])) or vector(0))
+          /
+          sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work"}[6h]))
+        labels:
+          service: demo-app
+          slo: availability
+      - record: slo:sli_error:ratio_rate6h
+        expr: |
+          (
+            sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[6h]))
+            -
+            sum(rate(http_request_duration_seconds_bucket{job="demo-app",namespace="slo-lab",route="/work",le="0.3"}[6h]))
+          )
+          /
+          sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[6h]))
+        labels:
+          service: demo-app
+          slo: latency
+      - record: slo:sli_error:ratio_rate1d
+        expr: |
+          (sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work",code=~"5.."}[1d])) or vector(0))
+          /
+          sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work"}[1d]))
+        labels:
+          service: demo-app
+          slo: availability
+      - record: slo:sli_error:ratio_rate1d
+        expr: |
+          (
+            sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[1d]))
+            -
+            sum(rate(http_request_duration_seconds_bucket{job="demo-app",namespace="slo-lab",route="/work",le="0.3"}[1d]))
+          )
+          /
+          sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[1d]))
+        labels:
+          service: demo-app
+          slo: latency
+      - record: slo:sli_error:ratio_rate3d
+        expr: |
+          (sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work",code=~"5.."}[3d])) or vector(0))
+          /
+          sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work"}[3d]))
+        labels:
+          service: demo-app
+          slo: availability
+      - record: slo:sli_error:ratio_rate3d
+        expr: |
+          (
+            sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[3d]))
+            -
+            sum(rate(http_request_duration_seconds_bucket{job="demo-app",namespace="slo-lab",route="/work",le="0.3"}[3d]))
+          )
+          /
+          sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[3d]))
+        labels:
+          service: demo-app
+          slo: latency
+  - name: slo-sli-28d
+    interval: 2m
+    rules:
+      - record: slo:sli_error:ratio_rate28d
+        expr: |
+          (sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work",code=~"5.."}[28d])) or vector(0))
+          /
+          sum(rate(http_requests_total{job="demo-app",namespace="slo-lab",route="/work"}[28d]))
+        labels:
+          service: demo-app
+          slo: availability
+      - record: slo:sli_error:ratio_rate28d
+        expr: |
+          (
+            sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[28d]))
+            -
+            sum(rate(http_request_duration_seconds_bucket{job="demo-app",namespace="slo-lab",route="/work",le="0.3"}[28d]))
+          )
+          /
+          sum(rate(http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work"}[28d]))
+        labels:
+          service: demo-app
+          slo: latency
+      # Share of the 28-day error budget not yet spent; negative once the
+      # SLO has been missed.
+      - record: slo:error_budget_remaining:ratio
+        expr: |
+          1 - (slo:sli_error:ratio_rate28d / on (service, slo) slo:error_budget:ratio)
+  - name: slo-objectives
+    interval: 1m
+    rules:
+      - record: slo:objective:ratio
+        expr: vector(0.995)
+        labels:
+          service: demo-app
+          slo: availability
+      - record: slo:objective:ratio
+        expr: vector(0.95)
+        labels:
+          service: demo-app
+          slo: latency
+      - record: slo:error_budget:ratio
+        expr: vector(0.005)
+        labels:
+          service: demo-app
+          slo: availability
+      - record: slo:error_budget:ratio
+        expr: vector(0.05)
+        labels:
+          service: demo-app
+          slo: latency

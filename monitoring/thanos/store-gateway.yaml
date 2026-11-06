@@ -1,0 +1,99 @@
+# Serves the blocks in object storage to Thanos Query, so data stays
+# queryable after it has aged out of the local Prometheus retention.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: thanos-store
+  labels:
+    app.kubernetes.io/name: thanos-store
+    app.kubernetes.io/part-of: slo-lab
+spec:
+  serviceName: thanos-store
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: thanos-store
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: thanos-store
+        app.kubernetes.io/part-of: slo-lab
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: thanos-store
+          image: quay.io/thanos/thanos:v0.42.5
+          args:
+            - store
+            - --data-dir=/data
+            - --objstore.config-file=/etc/thanos/objstore.yml
+            - --grpc-address=0.0.0.0:10901
+            - --http-address=0.0.0.0:10902
+          ports:
+            - name: grpc
+              containerPort: 10901
+            - name: http
+              containerPort: 10902
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            # Cache of block indexes only; the blocks themselves stay in the bucket.
+            - name: cache
+              mountPath: /data
+            - name: objstore
+              mountPath: /etc/thanos
+              readOnly: true
+      volumes:
+        - name: cache
+          emptyDir: {}
+        - name: objstore
+          secret:
+            secretName: thanos-objstore
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thanos-store
+  labels:
+    app.kubernetes.io/name: thanos-store
+spec:
+  # Headless, so Thanos Query can find each store pod through DNS SRV records.
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: thanos-store
+  ports:
+    - name: grpc
+      port: 10901
+      targetPort: grpc
+    - name: http
+      port: 10902
+      targetPort: http
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: thanos-store
+  labels:
+    app.kubernetes.io/name: thanos-store
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: thanos-store
+  endpoints:
+    - port: http
+      interval: 30s

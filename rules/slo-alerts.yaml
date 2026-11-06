@@ -1,0 +1,150 @@
+# Multiwindow, multi-burn-rate alerts for the demo-app SLOs.
+#
+# Each rule fires when the error budget is being spent at least <factor>
+# times faster than the rate that would use it up exactly over 28 days, measured
+# over both a long and a short window. The long window shows the burn is
+# significant; the short window makes the alert stop soon after the problem
+# does. Threshold = factor * (1 - objective). The derivation and the choice of
+# windows are in docs/slo.md.
+#
+# Alert names say who gets interrupted (Page or Ticket); severity is what
+# Alertmanager routes on.
+groups:
+  - name: slo-burn-rate-alerts
+    rules:
+      - alert: AvailabilityBudgetBurnPage
+        expr: |
+          slo:sli_error:ratio_rate1h{service="demo-app",slo="availability"} > (14.4 * 0.005)
+          and
+          slo:sli_error:ratio_rate5m{service="demo-app",slo="availability"} > (14.4 * 0.005)
+        for: 2m
+        labels:
+          severity: critical
+          long_window: 1h
+          short_window: 5m
+        annotations:
+          summary: "demo-app availability error budget burning at over 14.4x (1h/5m windows)"
+          description: >-
+            Over the last 1h and the last 5m, more than 7.2% of /work
+            requests were bad for the availability SLO (objective: 99.5% non-5xx). At this rate the
+            28-day error budget lasts less than 1.9 days.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/availability-budget-burn-page.md
+      - alert: AvailabilityBudgetBurnPage
+        expr: |
+          slo:sli_error:ratio_rate6h{service="demo-app",slo="availability"} > (6 * 0.005)
+          and
+          slo:sli_error:ratio_rate30m{service="demo-app",slo="availability"} > (6 * 0.005)
+        for: 2m
+        labels:
+          severity: critical
+          long_window: 6h
+          short_window: 30m
+        annotations:
+          summary: "demo-app availability error budget burning at over 6x (6h/30m windows)"
+          description: >-
+            Over the last 6h and the last 30m, more than 3% of /work
+            requests were bad for the availability SLO (objective: 99.5% non-5xx). At this rate the
+            28-day error budget lasts less than 4.7 days.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/availability-budget-burn-page.md
+      - alert: AvailabilityBudgetBurnTicket
+        expr: |
+          slo:sli_error:ratio_rate1d{service="demo-app",slo="availability"} > (3 * 0.005)
+          and
+          slo:sli_error:ratio_rate2h{service="demo-app",slo="availability"} > (3 * 0.005)
+        for: 15m
+        labels:
+          severity: warning
+          long_window: 1d
+          short_window: 2h
+        annotations:
+          summary: "demo-app availability error budget burning at over 3x (1d/2h windows)"
+          description: >-
+            Over the last 1d and the last 2h, more than 1.5% of /work
+            requests were bad for the availability SLO (objective: 99.5% non-5xx). At this rate the
+            28-day error budget lasts less than 9.3 days.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/availability-budget-burn-ticket.md
+      - alert: AvailabilityBudgetBurnTicket
+        expr: |
+          slo:sli_error:ratio_rate3d{service="demo-app",slo="availability"} > (1 * 0.005)
+          and
+          slo:sli_error:ratio_rate6h{service="demo-app",slo="availability"} > (1 * 0.005)
+        for: 15m
+        labels:
+          severity: warning
+          long_window: 3d
+          short_window: 6h
+        annotations:
+          summary: "demo-app availability error budget burning at over 1x (3d/6h windows)"
+          description: >-
+            Over the last 3d and the last 6h, more than 0.5% of /work
+            requests were bad for the availability SLO (objective: 99.5% non-5xx). At this rate the
+            28-day error budget lasts less than 28 days.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/availability-budget-burn-ticket.md
+      - alert: LatencyBudgetBurnPage
+        expr: |
+          slo:sli_error:ratio_rate1h{service="demo-app",slo="latency"} > (14.4 * 0.05)
+          and
+          slo:sli_error:ratio_rate5m{service="demo-app",slo="latency"} > (14.4 * 0.05)
+        for: 2m
+        labels:
+          severity: critical
+          long_window: 1h
+          short_window: 5m
+        annotations:
+          summary: "demo-app latency error budget burning at over 14.4x (1h/5m windows)"
+          description: >-
+            Over the last 1h and the last 5m, more than 72% of /work
+            requests were bad for the latency SLO (objective: 95% under 300 ms). At this rate the
+            28-day error budget lasts less than 1.9 days.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/latency-budget-burn-page.md
+      - alert: LatencyBudgetBurnPage
+        expr: |
+          slo:sli_error:ratio_rate6h{service="demo-app",slo="latency"} > (6 * 0.05)
+          and
+          slo:sli_error:ratio_rate30m{service="demo-app",slo="latency"} > (6 * 0.05)
+        for: 2m
+        labels:
+          severity: critical
+          long_window: 6h
+          short_window: 30m
+        annotations:
+          summary: "demo-app latency error budget burning at over 6x (6h/30m windows)"
+          description: >-
+            Over the last 6h and the last 30m, more than 30% of /work
+            requests were bad for the latency SLO (objective: 95% under 300 ms). At this rate the
+            28-day error budget lasts less than 4.7 days.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/latency-budget-burn-page.md
+      - alert: LatencyBudgetBurnTicket
+        expr: |
+          slo:sli_error:ratio_rate1d{service="demo-app",slo="latency"} > (3 * 0.05)
+          and
+          slo:sli_error:ratio_rate2h{service="demo-app",slo="latency"} > (3 * 0.05)
+        for: 15m
+        labels:
+          severity: warning
+          long_window: 1d
+          short_window: 2h
+        annotations:
+          summary: "demo-app latency error budget burning at over 3x (1d/2h windows)"
+          description: >-
+            Over the last 1d and the last 2h, more than 15% of /work
+            requests were bad for the latency SLO (objective: 95% under 300 ms). At this rate the
+            28-day error budget lasts less than 9.3 days.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/latency-budget-burn-ticket.md
+      - alert: LatencyBudgetBurnTicket
+        expr: |
+          slo:sli_error:ratio_rate3d{service="demo-app",slo="latency"} > (1 * 0.05)
+          and
+          slo:sli_error:ratio_rate6h{service="demo-app",slo="latency"} > (1 * 0.05)
+        for: 15m
+        labels:
+          severity: warning
+          long_window: 3d
+          short_window: 6h
+        annotations:
+          summary: "demo-app latency error budget burning at over 1x (3d/6h windows)"
+          description: >-
+            Over the last 3d and the last 6h, more than 5% of /work
+            requests were bad for the latency SLO (objective: 95% under 300 ms). At this rate the
+            28-day error budget lasts less than 28 days.
+          runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/latency-budget-burn-ticket.md

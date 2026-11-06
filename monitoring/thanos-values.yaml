@@ -1,0 +1,31 @@
+# Extra kube-prometheus-stack values for the optional Thanos setup, layered
+# over kube-prometheus-stack-values.yaml by scripts/deploy-monitoring.sh once
+# scripts/deploy-thanos.sh has created the object storage secret.
+
+prometheus:
+  # Headless Service through which Thanos Query finds the sidecar's gRPC API.
+  thanosService:
+    enabled: true
+  thanosServiceMonitor:
+    enabled: true
+  prometheusSpec:
+    # Identify this Prometheus among others. With several clusters or regions
+    # sending blocks to one bucket, these labels are what keep their series
+    # apart in Thanos Query.
+    externalLabels:
+      cluster: slo-lab
+      region: local
+    thanos:
+      image: quay.io/thanos/thanos:v0.42.5
+      objectStorageConfig:
+        existingSecret:
+          name: thanos-objstore
+          key: objstore.yml
+
+grafana:
+  additionalDataSources:
+    - name: Thanos
+      uid: thanos
+      type: prometheus
+      access: proxy
+      url: http://thanos-query.monitoring.svc:10902

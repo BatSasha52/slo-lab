@@ -1,0 +1,118 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  KUBECTL_VERSION: v1.36.6
+  KUBECONFORM_VERSION: v0.8.0
+  SHELLCHECK_VERSION: v0.11.0
+  PROMETHEUS_VERSION: 3.16.0
+  ALERTMANAGER_VERSION: 0.34.2
+  KIND_VERSION: v0.33.0
+  HELM_VERSION: v3.22.1
+  YAMLLINT_VERSION: 1.38.0
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: yamllint
+        run: |
+          pip install --user "yamllint==${YAMLLINT_VERSION}"
+          yamllint --strict .
+      - name: shellcheck
+        run: |
+          curl -sSfL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
+            | tar -xJ --strip-components=1 -C /usr/local/bin "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
+          shellcheck -x scripts/*.sh
+
+  manifests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install kubectl and kubeconform
+        run: |
+          curl -sSfLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x /usr/local/bin/kubectl
+          curl -sSfL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin kubeconform
+      - name: kubeconform
+        # The CRD catalog provides schemas for ServiceMonitor and PrometheusRule.
+        run: |
+          schemas='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+          kubectl kustomize k8s | kubeconform -strict -summary -kubernetes-version 1.36.0 \
+            -schema-location default -schema-location "$schemas" -
+          kubectl kustomize monitoring/thanos | kubeconform -strict -summary -kubernetes-version 1.36.0 \
+            -schema-location default -schema-location "$schemas" -
+          bash scripts/render-rules.sh | kubeconform -strict -summary -kubernetes-version 1.36.0 \
+            -schema-location default -schema-location "$schemas" -
+
+  rules:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install promtool and amtool
+        run: |
+          prom="prometheus-${PROMETHEUS_VERSION}.linux-amd64"
+          am="alertmanager-${ALERTMANAGER_VERSION}.linux-amd64"
+          curl -sSfL "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/${prom}.tar.gz" \
+            | tar -xz --strip-components=1 -C /usr/local/bin "${prom}/promtool"
+          curl -sSfL "https://github.com/prometheus/alertmanager/releases/download/v${ALERTMANAGER_VERSION}/${am}.tar.gz" \
+            | tar -xz --strip-components=1 -C /usr/local/bin "${am}/amtool"
+      - name: promtool check rules
+        run: promtool check rules rules/*.yaml
+      - name: promtool test rules
+        run: promtool test rules rules/tests/*.test.yaml
+      - name: amtool check-config
+        run: amtool check-config monitoring/alertmanager.yaml
+
+  app:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+      - name: docker build
+        run: docker build -t slo-lab/demo-app:0.1.0 .
+
+  # Full end-to-end run on a throwaway kind cluster: the same scripts as a
+  # local `make up`, then the smoke test. Slower than the other jobs, so it
+  # only runs on main and on demand.
+  kind-e2e:
+    if: github.event_name != 'pull_request'
+    needs: [lint, manifests, rules, app]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Install kind, kubectl and helm
+        run: |
+          curl -sSfLo /usr/local/bin/kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          curl -sSfLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x /usr/local/bin/kind /usr/local/bin/kubectl
+          curl -sSfL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" \
+            | tar -xz --strip-components=1 -C /usr/local/bin linux-amd64/helm
+      - name: Bring up the lab and run the smoke test
+        run: bash scripts/up.sh
+      - name: Dump cluster state on failure
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide
+          kubectl get events -A --sort-by=.lastTimestamp | tail -50
+      - name: Delete cluster
+        if: always()
+        run: bash scripts/down.sh

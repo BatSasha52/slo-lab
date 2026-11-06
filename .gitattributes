@@ -1,0 +1,4 @@
+# Scripts and manifests must keep LF endings even on a Windows checkout,
+# or bash and the YAML tools fail on the carriage returns.
+* text=auto eol=lf
+*.png binary

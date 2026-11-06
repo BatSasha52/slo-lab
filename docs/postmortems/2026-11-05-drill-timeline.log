@@ -1,0 +1,46 @@
+2026-11-05T22:15:18Z  drill    started; phases: errors latency
+2026-11-05T22:15:18Z  phase    availability: starting
+2026-11-05T22:15:20Z  metrics  availability ratio_5m=0 ratio_1h=0 budget_remaining=1
+2026-11-05T22:15:20Z  event    inject fault: fault.sh errors 0.5
+demo-app-5fcbdc9b95-8vvhq: {"error_rate": 0.5, "latency_ms": 0}
+demo-app-5fcbdc9b95-zsqpn: {"error_rate": 0.5, "latency_ms": 0}
+2026-11-05T22:17:23Z  alert    AvailabilityBudgetBurnTicket/3d/warning inactive -> pending (active_since=2026-11-05T22:17:07Z)
+2026-11-05T22:19:26Z  alert    AvailabilityBudgetBurnTicket/1d/warning inactive -> pending (active_since=2026-11-05T22:19:07Z)
+2026-11-05T22:21:28Z  alert    AvailabilityBudgetBurnPage/6h/critical inactive -> pending (active_since=2026-11-05T22:21:07Z)
+2026-11-05T22:23:30Z  alert    AvailabilityBudgetBurnPage/6h/critical pending -> firing (active_since=2026-11-05T22:21:07Z)
+2026-11-05T22:23:30Z  event    first AvailabilityBudgetBurnPage firing; simulated responder acts in 120s
+2026-11-05T22:23:32Z  metrics  availability ratio_5m=0.49543537441706637 ratio_1h=0.0656478172548886 budget_remaining=-6.253273184935502
+2026-11-05T22:24:33Z  alert    AvailabilityBudgetBurnPage/1h/critical inactive -> pending (active_since=2026-11-05T22:24:07Z)
+2026-11-05T22:25:34Z  event    mitigate: fault.sh clear
+demo-app-5fcbdc9b95-8vvhq: {"error_rate": 0.0, "latency_ms": 0}
+demo-app-5fcbdc9b95-zsqpn: {"error_rate": 0.0, "latency_ms": 0}
+2026-11-05T22:26:36Z  alert    AvailabilityBudgetBurnPage/1h/critical pending -> firing (active_since=2026-11-05T22:24:07Z)
+2026-11-05T22:30:09Z  alert    AvailabilityBudgetBurnPage/1h/critical firing -> inactive
+2026-11-05T22:32:27Z  alert    AvailabilityBudgetBurnTicket/3d/warning pending -> firing (active_since=2026-11-05T22:17:07Z)
+2026-11-05T22:34:29Z  alert    AvailabilityBudgetBurnTicket/1d/warning pending -> firing (active_since=2026-11-05T22:19:07Z)
+2026-11-05T22:54:17Z  alert    AvailabilityBudgetBurnPage/6h/critical firing -> inactive
+2026-11-05T22:54:17Z  event    all AvailabilityBudgetBurnPage alerts resolved
+2026-11-05T22:54:19Z  metrics  availability ratio_5m=0 ratio_1h=0.08549495512657113 budget_remaining=-9.472537093665998
+2026-11-05T22:54:19Z  phase    latency: starting
+2026-11-05T22:54:21Z  metrics  latency ratio_5m=0 ratio_1h=0 budget_remaining=1
+2026-11-05T22:54:21Z  event    inject fault: fault.sh latency 400
+demo-app-5fcbdc9b95-8vvhq: {"error_rate": 0.0, "latency_ms": 400}
+demo-app-5fcbdc9b95-zsqpn: {"error_rate": 0.0, "latency_ms": 400}
+2026-11-05T23:01:29Z  alert    LatencyBudgetBurnTicket/3d/warning inactive -> pending (active_since=2026-11-05T23:01:07Z)
+2026-11-05T23:14:27Z  alert    LatencyBudgetBurnTicket/1d/warning inactive -> pending (active_since=2026-11-05T23:14:07Z)
+2026-11-05T23:16:30Z  alert    LatencyBudgetBurnTicket/3d/warning pending -> firing (active_since=2026-11-05T23:01:07Z)
+2026-11-05T23:29:29Z  alert    LatencyBudgetBurnTicket/1d/warning pending -> firing (active_since=2026-11-05T23:14:07Z)
+2026-11-05T23:38:06Z  alert    LatencyBudgetBurnPage/1h/critical inactive -> pending (active_since=2026-11-05T23:37:37Z)
+2026-11-05T23:39:23Z  alert    LatencyBudgetBurnPage/6h/critical inactive -> pending (active_since=2026-11-05T23:39:07Z)
+2026-11-05T23:39:53Z  alert    LatencyBudgetBurnPage/1h/critical pending -> firing (active_since=2026-11-05T23:37:37Z)
+2026-11-05T23:39:53Z  event    first LatencyBudgetBurnPage firing; simulated responder acts in 120s
+2026-11-05T23:39:55Z  metrics  latency ratio_5m=1 ratio_1h=0.7540306824941014 budget_remaining=-4.854457445361447
+2026-11-05T23:41:27Z  alert    LatencyBudgetBurnPage/6h/critical pending -> firing (active_since=2026-11-05T23:39:07Z)
+2026-11-05T23:41:57Z  event    mitigate: fault.sh clear
+demo-app-5fcbdc9b95-8vvhq: {"error_rate": 0.0, "latency_ms": 0}
+demo-app-5fcbdc9b95-zsqpn: {"error_rate": 0.0, "latency_ms": 0}
+2026-11-05T23:44:01Z  alert    LatencyBudgetBurnPage/1h/critical firing -> inactive
+2026-11-05T23:54:25Z  alert    LatencyBudgetBurnPage/6h/critical firing -> inactive
+2026-11-05T23:54:25Z  event    all LatencyBudgetBurnPage alerts resolved
+2026-11-05T23:54:27Z  metrics  latency ratio_5m=0 ratio_1h=0.7965302768360606 budget_remaining=-5.026503989227163
+2026-11-05T23:54:27Z  drill    finished; still active: AvailabilityBudgetBurnTicket/1d/warning firing active_since=2026-11-05T22:19:07Z;AvailabilityBudgetBurnTicket/3d/warning firing active_since=2026-11-05T22:17:07Z;LatencyBudgetBurnTicket/1d/warning firing active_since=2026-11-05T23:14:07Z;LatencyBudgetBurnTicket/3d/warning firing active_since=2026-11-05T23:01:07Z;

@@ -1,0 +1,25 @@
+# Resource requests versus actual usage per namespace.
+#
+# Requests are what the scheduler reserves and what a cloud bill is
+# effectively based on; usage is what the containers consume. A low
+# usage/requests ratio means paid-for capacity sits idle, and a ratio
+# above 1 means the namespace relies on capacity it did not reserve.
+#
+# container!="" drops the cgroup-level series cAdvisor reports for the whole
+# pod, which would otherwise be counted twice.
+groups:
+  - name: capacity-recording
+    interval: 1m
+    rules:
+      - record: namespace:cpu_usage_cores:sum_rate5m
+        expr: sum by (namespace) (rate(container_cpu_usage_seconds_total{container!=""}[5m]))
+      - record: namespace:cpu_requests_cores:sum
+        expr: sum by (namespace) (kube_pod_container_resource_requests{resource="cpu"})
+      - record: namespace:memory_working_set_bytes:sum
+        expr: sum by (namespace) (container_memory_working_set_bytes{container!=""})
+      - record: namespace:memory_requests_bytes:sum
+        expr: sum by (namespace) (kube_pod_container_resource_requests{resource="memory"})
+      - record: namespace:cpu_requests_utilisation:ratio
+        expr: namespace:cpu_usage_cores:sum_rate5m / namespace:cpu_requests_cores:sum
+      - record: namespace:memory_requests_utilisation:ratio
+        expr: namespace:memory_working_set_bytes:sum / namespace:memory_requests_bytes:sum

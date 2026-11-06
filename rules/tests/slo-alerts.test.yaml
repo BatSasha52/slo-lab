@@ -1,0 +1,269 @@
+# Unit tests for the SLO recording and burn-rate alerting rules.
+# Run from the repository root:
+#   promtool test rules rules/tests/*.test.yaml
+#
+# Series notation: 'a+bxn' is n+1 samples starting at a and growing by b,
+# one per interval. All tests use 100 requests per minute so error counts
+# read directly as percentages.
+
+rule_files:
+  - ../slo-recording.yaml
+  - ../slo-alerts.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # 10% errors is a 20x burn: both page windows and both ticket windows fire.
+  - name: availability - sustained 10% errors pages and tickets
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="200"}'
+        values: '0+90x120'
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="500"}'
+        values: '0+10x120'
+    alert_rule_test:
+      # Condition is true but the 2m "for" has not elapsed yet.
+      - eval_time: 1m
+        alertname: AvailabilityBudgetBurnPage
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: AvailabilityBudgetBurnPage
+        exp_alerts:
+          - exp_labels: {severity: critical, service: demo-app, slo: availability, long_window: 1h, short_window: 5m}
+            exp_annotations: &avail_page_1h
+              summary: "demo-app availability error budget burning at over 14.4x (1h/5m windows)"
+              description: "Over the last 1h and the last 5m, more than 7.2% of /work requests were bad for the availability SLO (objective: 99.5% non-5xx). At this rate the 28-day error budget lasts less than 1.9 days."
+              runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/availability-budget-burn-page.md
+          - exp_labels: {severity: critical, service: demo-app, slo: availability, long_window: 6h, short_window: 30m}
+            exp_annotations: &avail_page_6h
+              summary: "demo-app availability error budget burning at over 6x (6h/30m windows)"
+              description: "Over the last 6h and the last 30m, more than 3% of /work requests were bad for the availability SLO (objective: 99.5% non-5xx). At this rate the 28-day error budget lasts less than 4.7 days."
+              runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/availability-budget-burn-page.md
+      - eval_time: 60m
+        alertname: AvailabilityBudgetBurnTicket
+        exp_alerts:
+          - exp_labels: {severity: warning, service: demo-app, slo: availability, long_window: 1d, short_window: 2h}
+            exp_annotations: &avail_ticket_1d
+              summary: "demo-app availability error budget burning at over 3x (1d/2h windows)"
+              description: "Over the last 1d and the last 2h, more than 1.5% of /work requests were bad for the availability SLO (objective: 99.5% non-5xx). At this rate the 28-day error budget lasts less than 9.3 days."
+              runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/availability-budget-burn-ticket.md
+          - exp_labels: {severity: warning, service: demo-app, slo: availability, long_window: 3d, short_window: 6h}
+            exp_annotations: &avail_ticket_3d
+              summary: "demo-app availability error budget burning at over 1x (3d/6h windows)"
+              description: "Over the last 3d and the last 6h, more than 0.5% of /work requests were bad for the availability SLO (objective: 99.5% non-5xx). At this rate the 28-day error budget lasts less than 28 days."
+              runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/availability-budget-burn-ticket.md
+
+  # 2% errors is a 4x burn: above both ticket thresholds, below both page thresholds.
+  - name: availability - 2% errors opens tickets but does not page
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="200"}'
+        values: '0+98x200'
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="500"}'
+        values: '0+2x200'
+    alert_rule_test:
+      - eval_time: 120m
+        alertname: AvailabilityBudgetBurnPage
+        exp_alerts: []
+      - eval_time: 120m
+        alertname: AvailabilityBudgetBurnTicket
+        exp_alerts:
+          - exp_labels: {severity: warning, service: demo-app, slo: availability, long_window: 1d, short_window: 2h}
+            exp_annotations: *avail_ticket_1d
+          - exp_labels: {severity: warning, service: demo-app, slo: availability, long_window: 3d, short_window: 6h}
+            exp_annotations: *avail_ticket_3d
+
+  # 0.75% errors is a 1.5x burn: only the slowest ticket (1x over 3d/6h) fires.
+  - name: availability - 1.5x burn only trips the 3d ticket
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="200"}'
+        values: '0+399x500'
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="500"}'
+        values: '0+3x500'
+    alert_rule_test:
+      - eval_time: 7h
+        alertname: AvailabilityBudgetBurnPage
+        exp_alerts: []
+      - eval_time: 7h
+        alertname: AvailabilityBudgetBurnTicket
+        exp_alerts:
+          - exp_labels: {severity: warning, service: demo-app, slo: availability, long_window: 3d, short_window: 6h}
+            exp_annotations: *avail_ticket_3d
+
+  # 0.4% errors is within the 0.5% budget: nothing fires.
+  - name: availability - errors within budget do not alert
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="200"}'
+        values: '0+996x500'
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="500"}'
+        values: '0+4x500'
+    alert_rule_test:
+      - eval_time: 7h
+        alertname: AvailabilityBudgetBurnPage
+        exp_alerts: []
+      - eval_time: 7h
+        alertname: AvailabilityBudgetBurnTicket
+        exp_alerts: []
+
+  # 20% errors for an hour, then a full recovery. Fifteen minutes later the
+  # 1h window is still above 14.4x but the 5m window is clean, so the fast
+  # page has resolved. The 6h/30m page still fires because its short window
+  # still contains errors. This is what the short windows are for.
+  - name: availability - short window resolves the page after recovery
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="200"}'
+        values: '0+80x60 4900+100x29'
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="500"}'
+        values: '0+20x60 1200x29'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: AvailabilityBudgetBurnPage
+        exp_alerts:
+          - exp_labels: {severity: critical, service: demo-app, slo: availability, long_window: 1h, short_window: 5m}
+            exp_annotations: *avail_page_1h
+          - exp_labels: {severity: critical, service: demo-app, slo: availability, long_window: 6h, short_window: 30m}
+            exp_annotations: *avail_page_6h
+      - eval_time: 75m
+        alertname: AvailabilityBudgetBurnPage
+        exp_alerts:
+          - exp_labels: {severity: critical, service: demo-app, slo: availability, long_window: 6h, short_window: 30m}
+            exp_annotations: *avail_page_6h
+
+  # Two healthy hours, then three minutes of 100% errors. The 5m window is
+  # far above the threshold but the 1h window is not (3 bad minutes out of 60
+  # is 5%, under 7.2%), so a short blip does not page.
+  - name: availability - brief spike does not page
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="200"}'
+        values: '0+100x120 12000x2 12100+100x20'
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="500"}'
+        values: '0x120 100+100x2 300x20'
+    alert_rule_test:
+      - eval_time: 125m
+        alertname: AvailabilityBudgetBurnPage
+        exp_alerts: []
+    promql_expr_test:
+      # ...even though the short window alone is well above the threshold.
+      - expr: slo:sli_error:ratio_rate5m{slo="availability"} > bool 0.072
+        eval_time: 124m
+        exp_samples:
+          - labels: '{service="demo-app",slo="availability"}'
+            value: 1
+
+  # Every request slower than 300 ms is a 20x burn of the 5% latency budget.
+  - name: latency - all requests slow pages and tickets
+    interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work",method="GET"}'
+        values: '0+100x120'
+      - series: 'http_request_duration_seconds_bucket{job="demo-app",namespace="slo-lab",route="/work",method="GET",le="0.3"}'
+        values: '0x120'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: LatencyBudgetBurnPage
+        exp_alerts:
+          - exp_labels: {severity: critical, service: demo-app, slo: latency, long_window: 1h, short_window: 5m}
+            exp_annotations:
+              summary: "demo-app latency error budget burning at over 14.4x (1h/5m windows)"
+              description: "Over the last 1h and the last 5m, more than 72% of /work requests were bad for the latency SLO (objective: 95% under 300 ms). At this rate the 28-day error budget lasts less than 1.9 days."
+              runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/latency-budget-burn-page.md
+          - exp_labels: {severity: critical, service: demo-app, slo: latency, long_window: 6h, short_window: 30m}
+            exp_annotations:
+              summary: "demo-app latency error budget burning at over 6x (6h/30m windows)"
+              description: "Over the last 6h and the last 30m, more than 30% of /work requests were bad for the latency SLO (objective: 95% under 300 ms). At this rate the 28-day error budget lasts less than 4.7 days."
+              runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/latency-budget-burn-page.md
+      - eval_time: 60m
+        alertname: LatencyBudgetBurnTicket
+        exp_alerts:
+          - exp_labels: {severity: warning, service: demo-app, slo: latency, long_window: 1d, short_window: 2h}
+            exp_annotations:
+              summary: "demo-app latency error budget burning at over 3x (1d/2h windows)"
+              description: "Over the last 1d and the last 2h, more than 15% of /work requests were bad for the latency SLO (objective: 95% under 300 ms). At this rate the 28-day error budget lasts less than 9.3 days."
+              runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/latency-budget-burn-ticket.md
+          - exp_labels: {severity: warning, service: demo-app, slo: latency, long_window: 3d, short_window: 6h}
+            exp_annotations: &lat_ticket_3d
+              summary: "demo-app latency error budget burning at over 1x (3d/6h windows)"
+              description: "Over the last 3d and the last 6h, more than 5% of /work requests were bad for the latency SLO (objective: 95% under 300 ms). At this rate the 28-day error budget lasts less than 28 days."
+              runbook_url: https://github.com/BatSasha52/slo-lab/blob/main/docs/runbooks/latency-budget-burn-ticket.md
+
+  # 10% slow is a 2x burn: only the 1x ticket fires.
+  - name: latency - 10% slow opens only the slow ticket
+    interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work",method="GET"}'
+        values: '0+100x120'
+      - series: 'http_request_duration_seconds_bucket{job="demo-app",namespace="slo-lab",route="/work",method="GET",le="0.3"}'
+        values: '0+90x120'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: LatencyBudgetBurnPage
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: LatencyBudgetBurnTicket
+        exp_alerts:
+          - exp_labels: {severity: warning, service: demo-app, slo: latency, long_window: 3d, short_window: 6h}
+            exp_annotations: *lat_ticket_3d
+
+  - name: latency - 4% slow is within budget
+    interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work",method="GET"}'
+        values: '0+100x500'
+      - series: 'http_request_duration_seconds_bucket{job="demo-app",namespace="slo-lab",route="/work",method="GET",le="0.3"}'
+        values: '0+96x500'
+    alert_rule_test:
+      - eval_time: 7h
+        alertname: LatencyBudgetBurnPage
+        exp_alerts: []
+      - eval_time: 7h
+        alertname: LatencyBudgetBurnTicket
+        exp_alerts: []
+
+  - name: recording rules - ratios and remaining budget
+    interval: 1m
+    input_series:
+      # 0.25% errors: half of the 0.5% availability budget.
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="200"}'
+        values: '0+399x120'
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="500"}'
+        values: '0+1x120'
+      # Requests to other routes must not count towards the SLI.
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/healthz",method="GET",code="500"}'
+        values: '0+50x120'
+      # 25% slower than 300 ms: five times the 5% latency budget.
+      - series: 'http_request_duration_seconds_count{job="demo-app",namespace="slo-lab",route="/work",method="GET"}'
+        values: '0+400x120'
+      - series: 'http_request_duration_seconds_bucket{job="demo-app",namespace="slo-lab",route="/work",method="GET",le="0.3"}'
+        values: '0+300x120'
+    # Rounded to four decimal places to avoid comparing floating-point noise.
+    promql_expr_test:
+      - expr: round(slo:sli_error:ratio_rate5m * 10000) / 10000
+        eval_time: 30m
+        exp_samples:
+          - labels: '{service="demo-app",slo="availability"}'
+            value: 0.0025
+          - labels: '{service="demo-app",slo="latency"}'
+            value: 0.25
+      - expr: round(slo:error_budget_remaining:ratio * 10000) / 10000
+        eval_time: 60m
+        exp_samples:
+          - labels: '{service="demo-app",slo="availability"}'
+            value: 0.5
+          - labels: '{service="demo-app",slo="latency"}'
+            value: -4
+
+  - name: recording rules - zero errors reads as 0, not empty
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="demo-app",namespace="slo-lab",route="/work",method="GET",code="200"}'
+        values: '0+100x30'
+    promql_expr_test:
+      - expr: slo:sli_error:ratio_rate5m{slo="availability"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'slo:sli_error:ratio_rate5m{service="demo-app",slo="availability"}'
+            value: 0

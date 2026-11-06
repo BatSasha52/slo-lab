@@ -1,0 +1,57 @@
+# Alertmanager configuration. Validate with:
+#   amtool check-config monitoring/alertmanager.yaml
+#
+# Severity convention used by every rule in this lab:
+#   critical -> page (someone is interrupted now)
+#   warning  -> ticket (handled during working hours)
+#   none     -> Watchdog only
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default
+  group_by: [alertname, service, slo]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - receiver: watchdog
+      matchers: ['alertname="Watchdog"']
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 5m
+    - receiver: pager
+      matchers: ['severity="critical"']
+      repeat_interval: 1h
+    - receiver: tickets
+      matchers: ['severity="warning"']
+      repeat_interval: 12h
+    - receiver: blackhole
+      matchers: ['severity=~"info|none"']
+
+inhibit_rules:
+  # A page for an SLO makes the ticket for the same SLO redundant. The slo
+  # matchers matter: Alertmanager treats a label missing on both alerts as
+  # equal, so without them every critical alert from the chart's default
+  # rules would silence every unrelated warning.
+  - source_matchers: ['severity="critical"', 'slo=~".+"']
+    target_matchers: ['severity="warning"', 'slo=~".+"']
+    equal: [service, slo]
+
+receivers:
+  - name: default
+    webhook_configs:
+      - url: http://alert-receiver.monitoring.svc:8080/default
+  - name: pager
+    webhook_configs:
+      - url: http://alert-receiver.monitoring.svc:8080/page
+        send_resolved: true
+  - name: tickets
+    webhook_configs:
+      - url: http://alert-receiver.monitoring.svc:8080/ticket
+        send_resolved: true
+  - name: watchdog
+    webhook_configs:
+      - url: http://alert-receiver.monitoring.svc:8080/watchdog
+  - name: blackhole
